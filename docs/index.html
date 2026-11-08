@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AIQuotaBar — Native macOS Menu Bar Quota Tracker for Claude, Antigravity & Codex</title>
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --card: #141821;
+      --card-border: rgba(255, 255, 255, 0.09);
+      --text: #f3f5f8;
+      --muted: #8b93a6;
+      --accent: #0a84ff;
+      --green: #32d74b;
+      --yellow: #ffd60a;
+      --red: #ff453a;
+      --claude: #e6784a;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      background: radial-gradient(circle at 50% 0%, #1a2236 0%, var(--bg) 60%);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 20px 80px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 13px;
+      border-radius: 999px;
+      background: rgba(10, 132, 255, 0.14);
+      border: 1px solid rgba(10, 132, 255, 0.35);
+      color: #6eb6ff;
+      font-size: 12.5px;
+      font-weight: 600;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      font-size: clamp(32px, 5vw, 48px);
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: clamp(15px, 2vw, 18px);
+      max-width: 600px;
+      text-align: center;
+      line-height: 1.5;
+      margin-bottom: 28px;
+    }
+
+    /* Brew Command Copy Box */
+    .brew-box {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: rgba(20, 24, 33, 0.9);
+      border: 1px solid var(--card-border);
+      padding: 12px 16px 12px 20px;
+      border-radius: 12px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+      margin-bottom: 14px;
+      max-width: 100%;
+    }
+
+    .cta-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 42px;
+    }
+
+    .cta-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: transform 0.12s ease, background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .cta-btn svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    .cta-btn.primary {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+    }
+
+    .cta-btn.primary:hover {
+      background: rgba(255, 255, 255, 0.16);
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+
+    .cta-btn.secondary {
+      background: rgba(20, 24, 33, 0.75);
+      color: #c9d1d9;
+      border: 1px solid var(--card-border);
+    }
+
+    .cta-btn.secondary:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .cta-btn:active {
+      transform: scale(0.98);
+    }
+
+    .cta-tag {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.07);
+      padding: 2px 6px;
+      border-radius: 5px;
+      margin-left: 2px;
+    }
+
+    .brew-box code {
+      font-family: "SF Mono", ui-monospace, Menlo, monospace;
+      font-size: 13.5px;
+      color: #e2e8f0;
+      white-space: nowrap;
+      overflow-x: auto;
+    }
+
+    .brew-box code .prompt {
+      color: var(--muted);
+      user-select: none;
+      margin-right: 8px;
+    }
+
+    .copy-btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 7px 13px;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.12s ease, background 0.15s ease;
+      flex-shrink: 0;
+    }
+
+    .copy-btn:hover {
+      background: #2291ff;
+    }
+
+    .copy-btn:active {
+      transform: scale(0.97);
+    }
+
+    /* Interactive macOS Menu Bar + Popover Demo Stage */
+    .demo-stage {
+      width: 100%;
+      max-width: 780px;
+      background: linear-gradient(145deg, #1b2234 0%, #101522 100%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+      padding: 20px 24px 34px;
+      box-shadow: 0 28px 70px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      margin-bottom: 52px;
+    }
+
+    .stage-hint {
+      font-size: 12px;
+      color: #93a3b8;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Simulated macOS Top Menu Bar */
+    .mac-menubar {
+      width: 100%;
+      height: 30px;
+      background: rgba(12, 14, 18, 0.88);
+      backdrop-filter: blur(20px);
+      border-radius: 9px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 0 14px;
+      gap: 14px;
+      user-select: none;
+    }
+
+    .menubar-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 2px 7px;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .menubar-item.active,
+    .menubar-item:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .mb-seg {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-family: "SF Mono", ui-monospace, Menlo, monospace;
+      font-size: 12.5px;
+      font-weight: 600;
+    }
+
+    .mb-slash {
+      color: rgba(255, 255, 255, 0.45);
+      font-weight: 400;
+      margin: 0 0.5px;
+    }
+
+    .sys-icons {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      color: rgba(255, 255, 255, 0.85);
+      font-size: 12.5px;
+      font-weight: 500;
+    }
+
+    /* Popover */
+    .popover-wrapper {
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .popover-arrow {
+      width: 14px;
+      height: 8px;
+      background: #23262e;
+      clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+      margin-bottom: -1px;
+    }
+
+    .popover {
+      width: 340px;
+      background: rgba(35, 38, 46, 0.95);
+      backdrop-filter: blur(28px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      padding: 11px;
+      box-shadow: 0 22px 50px rgba(0, 0, 0, 0.65);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .pop-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .pop-title {
+      font-size: 12.5px;
+      font-weight: 600;
+    }
+
+    .pop-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .pin-legend {
+      font-size: 10.5px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .gear-btn {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 3px 5px;
+      border-radius: 5px;
+      font-size: 13px;
+      transition: all 0.15s;
+    }
+
+    .gear-btn.active {
+      color: var(--accent);
+      background: rgba(10, 132, 255, 0.18);
+    }
+
+    /* Settings Drawer */
+    .settings-box {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 7px;
+      padding: 8px;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .settings-box.open {
+      display: flex;
+    }
+
+    .settings-label {
+      font-size: 9.5px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.03em;
+    }
+
+    .provider-toggles {
+      display: flex;
+      gap: 6px;
+    }
+
+    .prov-btn {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4.5px;
+      padding: 5px 8px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      font-size: 11px;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .prov-btn.enabled {
+      background: rgba(10, 132, 255, 0.16);
+      border-color: rgba(10, 132, 255, 0.45);
+      font-weight: 600;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.9);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .check-box-icon {
+      width: 13px;
+      height: 13px;
+      border-radius: 3.5px;
+      border: 1.5px solid var(--muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      color: transparent;
+    }
+
+    .check-row.checked .check-box-icon {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    .divider {
+      height: 1px;
+      background: rgba(255, 255, 255, 0.09);
+    }
+
+    .provider-sec {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .provider-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .provider-name {
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .provider-sub {
+      font-size: 10.5px;
+      color: var(--muted);
+    }
+
+    .bucket-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .pin-pill {
+      width: 62px;
+      padding: 2.5px 7px;
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.07);
+      color: rgba(255, 255, 255, 0.85);
+      font-size: 11px;
+      border: none;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .pin-pill.pinned {
+      background: rgba(10, 132, 255, 0.85);
+      color: white;
+      font-weight: 600;
+    }
+
+    .bar-track {
+      flex: 1;
+      height: 5.5px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 99px;
+    }
+
+    .reset-time {
+      width: 52px;
+      text-align: right;
+      font-family: "SF Mono", ui-monospace, Menlo, monospace;
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .pct-val {
+      width: 38px;
+      text-align: right;
+      font-family: "SF Mono", ui-monospace, Menlo, monospace;
+      font-size: 11.5px;
+      font-weight: 600;
+    }
+
+    .pop-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* Feature Grid */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 18px;
+      width: 100%;
+      max-width: 780px;
+    }
+
+    .feat-card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 20px;
+    }
+
+    .feat-card h3 {
+      font-size: 15px;
+      margin-bottom: 6px;
+    }
+
+    .feat-card p {
+      font-size: 13.5px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .logo-icon {
+      object-fit: contain;
+      display: inline-block;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="badge">✨ Native macOS Menu Bar App · Universal (Apple Silicon & Intel)</div>
+  <h1>AIQuotaBar</h1>
+  <p class="subtitle">
+    See your live remaining <strong>Claude</strong>, <strong>Antigravity</strong>, and <strong>Codex</strong> quotas right in your macOS menu bar. Frameless, instant, and 100% local.
+  </p>
+
+  <div class="brew-box">
+    <code><span class="prompt">$</span><span id="brew-cmd">brew install --cask nikhilhassija/tap/ai-quota-bar</span></code>
+    <button class="copy-btn" onclick="copyBrew()">Copy</button>
+  </div>
+
+  <div class="cta-row">
+    <a class="cta-btn primary" href="https://github.com/nikhilhassija/ai-quota-bar/releases/latest/download/AIQuotaBar.zip">
+      <svg viewBox="0 0 384 512" fill="currentColor" aria-hidden="true">
+        <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/>
+      </svg>
+      <span>Download for macOS</span>
+      <span class="cta-tag">.zip</span>
+    </a>
+
+    <a class="cta-btn secondary" href="https://github.com/nikhilhassija/ai-quota-bar" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+      </svg>
+      <span>View on GitHub</span>
+    </a>
+  </div>
+
+  <!-- Interactive Live Simulator -->
+  <div class="demo-stage">
+    <div class="stage-hint">👆 Interactive Demo — Click any <strong>📌 pill</strong> or the <strong>⚙️ gear icon</strong> below to test it live!</div>
+
+    <div class="mac-menubar">
+      <div class="menubar-item active" id="menubar-segments"></div>
+      <div class="sys-icons">
+        <span>Wi-Fi</span>
+        <span>100%</span>
+        <span>Sun 21:09</span>
+      </div>
+    </div>
+
+    <div class="popover-wrapper">
+      <div class="popover-arrow"></div>
+      <div class="popover">
+        <div class="pop-header">
+          <span class="pop-title">AI Quotas</span>
+          <div class="pop-right">
+            <span class="pin-legend">📌 Pinned to menu bar</span>
+            <button class="gear-btn active" id="gear-btn" onclick="toggleSettings()" title="Configure enabled providers">⚙️</button>
+          </div>
+        </div>
+
+        <div class="settings-box open" id="settings-box">
+          <div class="settings-label">ENABLED INTEGRATIONS</div>
+          <div class="provider-toggles" id="provider-toggles"></div>
+          <div class="check-row" id="chk-agy-claude" onclick="toggleAgyClaude()">
+            <span class="check-box-icon">✓</span>
+            <span>Show Claude models inside Antigravity</span>
+          </div>
+          <div class="check-row checked" id="chk-login" onclick="this.classList.toggle('checked')">
+            <span class="check-box-icon">✓</span>
+            <span>Launch AIQuotaBar at login</span>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+        <div id="providers-container" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <div class="divider"></div>
+
+        <div class="pop-footer">
+          <span style="cursor:pointer;color:var(--text);font-weight:500;">↻ Refresh</span>
+          <span style="font-size:10px;">21:09</span>
+          <span style="cursor:pointer;">Quit</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="features">
+    <div class="feat-card">
+      <h3>🎯 Pin Only What You Care About</h3>
+      <p>Keep your menu bar ultra-compact by pinning just your 5-hour session or 7-day weekly buckets, while viewing all buckets in the dropdown.</p>
+    </div>
+    <div class="feat-card">
+      <h3>🔒 100% On-Device & Private</h3>
+      <p>Reads directly from your local Claude Desktop/Code credentials, local Antigravity language server, and local Codex sessions. Zero external servers.</p>
+    </div>
+    <div class="feat-card">
+      <h3>⚡ Native SwiftUI + AppKit</h3>
+      <p>Compiled universal macOS binary (~200 KB) with zero Electron overhead, instant wake, and automatic 60-second background refresh.</p>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      showSettings: true,
+      includeAgyClaude: false,
+      enabled: { claude: true, antigravity: true, codex: true },
+      pinned: new Set(["claude.5h", "claude.7d", "agy.5h", "agy.7d"]),
+      providers: [
+        {
+          id: "claude",
+          name: "Claude",
+          sub: "Pro",
+          buckets: [
+            { id: "claude.5h", label: "5h", pct: 66, reset: "4h 12m" },
+            { id: "claude.7d", label: "7d", pct: 87, reset: "3d 11h" }
+          ]
+        },
+        {
+          id: "antigravity",
+          name: "Antigravity",
+          sub: "Connected",
+          buckets: [
+            { id: "agy.5h", label: "5h", pct: 92, reset: "2h 02m" },
+            { id: "agy.7d", label: "7d", pct: 89, reset: "6d 0h" },
+            { id: "agy.claude.5h", label: "Claude 5h", pct: 100, reset: "4h 58m", claudeOnly: true }
+          ]
+        },
+        {
+          id: "codex",
+          name: "Codex",
+          sub: "Go plan",
+          buckets: [
+            { id: "codex.30d", label: "30d", pct: 98, reset: "24d 17h" }
+          ]
+        }
+      ]
+    };
+
+    function colorFor(pct) {
+      if (pct > 40) return "var(--green)";
+      if (pct > 15) return "var(--yellow)";
+      return "var(--red)";
+    }
+
+    function logoHTML(id, size = 15) {
+      if (id === "claude") return `<img src="assets/claude_orange.png" class="logo-icon" style="width:${size}px;height:${size}px;" alt="Claude" />`;
+      if (id === "codex") return `<img src="assets/openai_white.png" class="logo-icon" style="width:${size}px;height:${size}px;" alt="Codex" />`;
+      return `<img src="assets/antigravity_logo.png" class="logo-icon" style="width:${size}px;height:${size}px;" alt="Antigravity" />`;
+    }
+
+    function toggleSettings() {
+      state.showSettings = !state.showSettings;
+      document.getElementById("settings-box").classList.toggle("open", state.showSettings);
+      document.getElementById("gear-btn").classList.toggle("active", state.showSettings);
+    }
+
+    function toggleProvider(id) {
+      state.enabled[id] = !state.enabled[id];
+      render();
+    }
+
+    function togglePin(bucketId) {
+      if (state.pinned.has(bucketId)) state.pinned.delete(bucketId);
+      else state.pinned.add(bucketId);
+      render();
+    }
+
+    function toggleAgyClaude() {
+      state.includeAgyClaude = !state.includeAgyClaude;
+      document.getElementById("chk-agy-claude").classList.toggle("checked", state.includeAgyClaude);
+      render();
+    }
+
+    function render() {
+      // 1. Menu Bar
+      const mb = document.getElementById("menubar-segments");
+      let mbHTML = "";
+      for (const p of state.providers) {
+        if (!state.enabled[p.id]) continue;
+        const visibleBuckets = p.buckets.filter(b => (!b.claudeOnly || state.includeAgyClaude) && state.pinned.has(b.id));
+        if (visibleBuckets.length === 0) continue;
+        const pcts = visibleBuckets.map(b => `<span style="color:${colorFor(b.pct)}">${b.pct}%</span>`).join(`<span class="mb-slash">/</span>`);
+        mbHTML += `<div class="mb-seg">${logoHTML(p.id, 16)} ${pcts}</div>`;
+      }
+      mb.innerHTML = mbHTML || `<div class="mb-seg">${logoHTML("antigravity", 16)}</div>`;
+
+      // 2. Settings Provider Buttons
+      const pt = document.getElementById("provider-toggles");
+      pt.innerHTML = state.providers.map(p => {
+        const on = state.enabled[p.id];
+        return `<button class="prov-btn ${on ? 'enabled' : ''}" onclick="toggleProvider('${p.id}')">
+          ${logoHTML(p.id, 13)}
+          <span>${p.name}</span>
+          <span style="color:${on ? 'var(--accent)' : 'var(--muted)'};font-size:10px;">${on ? '●' : '○'}</span>
+        </button>`;
+      }).join("");
+      document.getElementById("chk-agy-claude").style.display = state.enabled.antigravity ? "flex" : "none";
+
+      // 3. Provider Sections
+      const container = document.getElementById("providers-container");
+      const activeProviders = state.providers.filter(p => state.enabled[p.id]);
+      if (activeProviders.length === 0) {
+        container.innerHTML = `<div style="font-size:11px;color:var(--muted);padding:4px 0;">All providers disabled. Click ⚙️ above to enable.</div>`;
+        return;
+      }
+      container.innerHTML = activeProviders.map((p, idx) => {
+        const buckets = p.buckets.filter(b => !b.claudeOnly || state.includeAgyClaude);
+        const rows = buckets.map(b => {
+          const isPinned = state.pinned.has(b.id);
+          return `<div class="bucket-row">
+            <button class="pin-pill ${isPinned ? 'pinned' : ''}" style="width:${b.label.length > 4 ? '88px' : '62px'}" onclick="togglePin('${b.id}')">
+              <span style="font-size:9px;">📌</span>
+              <span>${b.label}</span>
+            </button>
+            <div class="bar-track">
+              <div class="bar-fill" style="width:${b.pct}%;background:${colorFor(b.pct)}"></div>
+            </div>
+            <span class="reset-time">${b.reset}</span>
+            <span class="pct-val" style="color:${colorFor(b.pct)}">${b.pct}%</span>
+          </div>`;
+        }).join("");
+
+        return `<div class="provider-sec">
+          <div class="provider-head">
+            ${logoHTML(p.id, 15.5)}
+            <span class="provider-name">${p.name}</span>
+            <span class="provider-sub">· ${p.sub}</span>
+          </div>
+          ${rows}
+        </div>${idx < activeProviders.length - 1 ? '<div class="divider"></div>' : ''}`;
+      }).join("");
+    }
+
+    function copyBrew() {
+      const cmd = document.getElementById("brew-cmd").innerText;
+      navigator.clipboard.writeText(cmd);
+      const btn = document.querySelector(".copy-btn");
+      btn.innerText = "Copied!";
+      setTimeout(() => (btn.innerText = "Copy"), 1600);
+    }
+
+    render();
+  </script>
+</body>
+</html>
