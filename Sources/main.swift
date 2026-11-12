@@ -311,6 +311,8 @@ final class QuotaService {
     private let localSession: URLSession
     private var cachedClaudeToken: String?
     private var failedClaudeTokens: Set<String> = []
+    private var lastClaudeOAuthStatus: ProviderStatus?
+    private var lastClaudeOAuthFetchTime: Date = .distantPast
     private var cachedSafeStorageKey: Data?
     private var didAttemptSafeStorageKey: Bool = false
     private var didAttemptClaudeCodeKeychain: Bool = false
@@ -633,23 +635,72 @@ final class QuotaService {
 
     // MARK: 2. Claude Fetcher
 
-    func fetchClaude() async -> ProviderStatus {
-        // 1. Try cached token first if available
-        if let cached = cachedClaudeToken,
-           let status = await fetchClaudeOAuthUsage(token: cached) {
-            return status
+    private enum ClaudeOAuthResult {
+        case success(ProviderStatus)
+        case unauthorized
+        case transientFailure
+    }
+
+    func fetchClaude(force: Bool = false) async -> ProviderStatus {
+        // Return cached live OAuth status if fetched within the last 90s (prevents HTTP 429 on /api/oauth/usage)
+        if !force,
+           let recent = lastClaudeOAuthStatus,
+           Date().timeIntervalSince(lastClaudeOAuthFetchTime) < 90 {
+            return recent
         }
-        cachedClaudeToken = nil
+
+        // 1. Try cached token first if available
+        if let cached = cachedClaudeToken {
+            switch await fetchClaudeOAuthUsage(token: cached) {
+            case .success(let status):
+                lastClaudeOAuthStatus = status
+                lastClaudeOAuthFetchTime = Date()
+                return status
+            case .transientFailure:
+                // Network offline (e.g. waking from sleep) or HTTP 429: keep token & last known status
+                if let last = lastClaudeOAuthStatus {
+                    return last
+                }
+            case .unauthorized:
+                failedClaudeTokens.insert(cached)
+                cachedClaudeToken = nil
+            }
+        }
 
         // 2. Discover candidate OAuth tokens from ~/.claude/.credentials.json, Keychain, or Claude Desktop config.json
         let tokens = readCandidateClaudeOAuthTokens()
+        if !tokens.isEmpty && tokens.allSatisfy({ failedClaudeTokens.contains($0) }) {
+            failedClaudeTokens.removeAll()
+        }
+
         for token in tokens where !failedClaudeTokens.contains(token) {
-            if let status = await fetchClaudeOAuthUsage(token: token) {
+            switch await fetchClaudeOAuthUsage(token: token) {
+            case .success(let status):
                 self.cachedClaudeToken = token
+                self.lastClaudeOAuthStatus = status
+                self.lastClaudeOAuthFetchTime = Date()
                 return status
-            } else {
+            case .unauthorized:
                 failedClaudeTokens.insert(token)
+            case .transientFailure:
+                if let last = lastClaudeOAuthStatus {
+                    return last
+                }
+                break
             }
+        }
+
+        // If we previously succeeded via OAuth or have candidate OAuth tokens, don't overwrite with rough local JSONL estimates
+        if let last = lastClaudeOAuthStatus {
+            return last
+        }
+        if !tokens.isEmpty {
+            return ProviderStatus(
+                id: .claude,
+                subtitle: "Reconnecting…",
+                buckets: [],
+                errorNote: "Waiting for api.anthropic.com…"
+            )
         }
 
         // 3. Try Claude Desktop plan-usage-history.json if non-empty
@@ -677,7 +728,7 @@ final class QuotaService {
             )
         }
 
-        // 5. Fallback: compute rolling 5h & 7d usage from local ~/.claude/projects/*.jsonl
+        // 5. Fallback (only if no OAuth token exists): compute rolling 5h & 7d usage from local ~/.claude/projects/*.jsonl
         let localUsage = readLocalClaudeProjectTokens()
         let planName = readClaudePlanName() ?? "Pro"
         let pct5h = max(0, min(100, 100 - Int((Double(localUsage.tokens5h) / 500_000.0) * 100.0)))
@@ -847,29 +898,37 @@ final class QuotaService {
         return String(bytes: outBuffer.prefix(outLength), encoding: .utf8)
     }
 
-    private func fetchClaudeOAuthUsage(token: String) async -> ProviderStatus? {
-        guard let url = URL(string: "https://api.anthropic.com/api/oauth/usage") else { return nil }
+    private func fetchClaudeOAuthUsage(token: String) async -> ClaudeOAuthResult {
+        guard let url = URL(string: "https://api.anthropic.com/api/oauth/usage") else { return .transientFailure }
         var req = URLRequest(url: url)
-        req.timeoutInterval = 4.0
+        req.timeoutInterval = 5.0
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("claude-code/2.1.317", forHTTPHeaderField: "User-Agent")
 
         guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let http = resp as? HTTPURLResponse else {
+            return .transientFailure
+        }
+
+        if http.statusCode == 401 || http.statusCode == 403 {
+            return .unauthorized
+        }
+
+        guard http.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
+            return .transientFailure
         }
 
         let buckets = parseClaudeUsageJSON(json)
-        guard !buckets.isEmpty else { return nil }
-        return ProviderStatus(
+        guard !buckets.isEmpty else { return .transientFailure }
+        return .success(ProviderStatus(
             id: .claude,
             subtitle: readClaudePlanName() ?? "Pro",
             buckets: buckets,
             errorNote: nil
-        )
+        ))
     }
 
     private func parseClaudeUsageJSON(_ json: [String: Any]) -> [QuotaBucket] {
@@ -1291,7 +1350,7 @@ final class QuotaViewModel: ObservableObject {
         onMenuBarNeedsUpdate?()
     }
 
-    func refresh() async {
+    func refresh(force: Bool = false) async {
         guard !isRefreshing else { return }
         isRefreshing = true
 
@@ -1300,7 +1359,7 @@ final class QuotaViewModel: ObservableObject {
         let wantCodex = enabledProviders.contains(.codex)
         let showAgyClaude = includeAntigravityClaude
 
-        async let claudeOpt: ProviderStatus? = wantClaude ? await service.fetchClaude() : nil
+        async let claudeOpt: ProviderStatus? = wantClaude ? await service.fetchClaude(force: force) : nil
         async let agyOpt: ProviderStatus? = wantAgy ? await service.fetchAntigravity(includeClaude: showAgyClaude) : nil
         let codexOpt: ProviderStatus? = wantCodex ? service.fetchCodex() : nil
 
@@ -1605,7 +1664,7 @@ struct QuotaPopoverView: View {
             // Footer Controls
             HStack {
                 Button(action: {
-                    Task { await vm.refresh() }
+                    Task { await vm.refresh(force: true) }
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.clockwise")
@@ -1689,9 +1748,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             guard let self = self else { return }
             Task { @MainActor in
-                await self.vm.refresh()
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                await self.vm.refresh()
+                // Wait 2.5s for Wi-Fi to reconnect after wake before refreshing
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                await self.vm.refresh(force: true)
             }
         }
     }
