@@ -1,6 +1,6 @@
 cask "ai-quota-bar" do
-  version "1.0.1"
-  sha256 "7529f0c38e4d264d739235cad18f50596f5ba0bd8c313cd7918ca778aaf4cdc0"
+  version "1.0.2"
+  sha256 "d98519f2ac34480f5b7052e2e743db44c21106156fc1531fbbe9b252541cb569"
 
   url "https://github.com/nikhilhassija/ai-quota-bar/releases/download/v#{version}/AIQuotaBar.zip"
   name "AIQuotaBar"

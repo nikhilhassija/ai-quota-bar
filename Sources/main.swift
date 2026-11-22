@@ -399,13 +399,34 @@ final class QuotaService {
         for rawLine in psOutput.components(separatedBy: .newlines) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             guard line.contains("language_server"),
-                  line.localizedCaseInsensitiveContains("antigravity"),
-                  line.contains("--csrf_token") else { continue }
+                  line.localizedCaseInsensitiveContains("antigravity") else { continue }
 
             let parts = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
             guard let pidStr = parts.first, let pid = Int(pidStr) else { continue }
-            guard let csrfIdx = parts.firstIndex(of: "--csrf_token"), csrfIdx + 1 < parts.count else { continue }
-            let csrf = parts[csrfIdx + 1]
+
+            // 1. Check CLI flags (--csrf_token <val> or --csrf_token=<val> in Antigravity 1.x)
+            var csrf: String?
+            if let csrfIdx = parts.firstIndex(where: { $0 == "--csrf_token" || $0 == "-csrf_token" }),
+               csrfIdx + 1 < parts.count {
+                csrf = parts[csrfIdx + 1]
+            } else if let eqPart = parts.first(where: { $0.hasPrefix("--csrf_token=") || $0.hasPrefix("-csrf_token=") }),
+                      let eqIdx = eqPart.firstIndex(of: "=") {
+                csrf = String(eqPart[eqPart.index(after: eqIdx)...])
+            }
+
+            // 2. Fallback to process environment (ANTIGRAVITY_SERVER_CSRF_TOKEN=<val> in Antigravity 2.0+)
+            if csrf == nil || csrf?.isEmpty == true {
+                if let envOut = runCommand("/bin/ps", args: ["eww", "-p", "\(pid)"]),
+                   let range = envOut.range(of: "ANTIGRAVITY_SERVER_CSRF_TOKEN=") {
+                    let after = envOut[range.upperBound...]
+                    let token = after.prefix(while: { !$0.isWhitespace })
+                    if !token.isEmpty {
+                        csrf = String(token)
+                    }
+                }
+            }
+
+            guard let resolvedCsrf = csrf, !resolvedCsrf.isEmpty else { continue }
 
             guard let lsofOut = runCommand("/usr/sbin/lsof", args: ["-nP", "-a", "-p", "\(pid)", "-iTCP", "-sTCP:LISTEN", "-Fn"]) else {
                 continue
@@ -424,7 +445,7 @@ final class QuotaService {
                 }
             }
             if !orderedPorts.isEmpty {
-                results.append((pid, csrf, orderedPorts))
+                results.append((pid, resolvedCsrf, orderedPorts))
             }
         }
         return results
